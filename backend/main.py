@@ -13,6 +13,7 @@ from qdrant_client.http.models import Distance, VectorParams
 from sentence_transformers import CrossEncoder
 from uuid import uuid4
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.documents import Document
 from dotenv import load_dotenv
 
 # Import from the existing script
@@ -147,49 +148,49 @@ async def lifespan(app: FastAPI):
     client = QdrantClient(path=qdrant_path)
     
     # Check if collection exists
+    # Check if collection exists
     if not client.collection_exists(COLLECTION_NAME):
         print(f"WARNING: Collection '{COLLECTION_NAME}' not found. Please run ingestion first using './docker.sh ingest'")
-        # We can still initialize the pipeline, but it will return empty results
-        # Or we could choose to crash/wait. For now, proceeding allows the server to start.
-
-    vectorstore = QdrantVectorStore(
-        client=client,
-        collection_name=COLLECTION_NAME,
-        embedding=embedder,
-    )
-    
-    # Sparse Retriever (BM25)
-    # BM25 must be rebuilt from documents usually. 
-    # Since we don't carry the raw documents easily in Qdrant (payloads yes, but all of them?)
-    # For a perfect RAG per requirements, we'd need to load the docs again to build BM25 
-    # OR we can just use the VectorStore if BM25 is too heavy to rebuild on every startup without persisting it.
-    # The requirement says "run ingestion with ./docker.sh ingest".
-    # Let's try to reload the PDF just for BM25 construction if it exists, otherwise skip BM25 or handle it gracefully.
-    
-    PDF_PATH = os.getenv("PDF_PATH", "Schatzinsel_E.pdf")
-    if os.path.exists(PDF_PATH):
-        print(f"Loading PDF for BM25: {PDF_PATH}")
-        loader = PyPDFLoader(PDF_PATH)
-        data = loader.load()
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-        chunks = text_splitter.split_documents(data)
-        sparse_retriever = BM25Retriever.from_documents(chunks)
+        print("Pipeline initialization skipped.")
     else:
-        print("PDF not found for BM25. Hybrid retrieval might be degraded.")
-        # Fallback: create an empty BM25 or mock it? 
-        # Ideally we should verify if we can skip it. The pipeline expects it.
-        # We can attempt to create a dummy if needed, but easier to just check file existence.
-        # Inside Docker, PDF should be mounted.
-        sparse_retriever = None 
+        vectorstore = QdrantVectorStore(
+            client=client,
+            collection_name=COLLECTION_NAME,
+            embedding=embedder,
+        )
+        
+        # Sparse Retriever (BM25)
+        # BM25 must be rebuilt from documents usually. 
+        # Since we don't carry the raw documents easily in Qdrant (payloads yes, but all of them?)
+        # For a perfect RAG per requirements, we'd need to load the docs again to build BM25 
+        # OR we can just use the VectorStore if BM25 is too heavy to rebuild on every startup without persisting it.
+        # The requirement says "run ingestion with ./docker.sh ingest".
+        # Let's try to reload the PDF just for BM25 construction if it exists, otherwise skip BM25 or handle it gracefully.
+        
+        PDF_PATH = os.getenv("PDF_PATH", "Schatzinsel_E.pdf")
+        if os.path.exists(PDF_PATH):
+            print(f"Loading PDF for BM25: {PDF_PATH}")
+            loader = PyPDFLoader(PDF_PATH)
+            data = loader.load()
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+            chunks = text_splitter.split_documents(data)
+            sparse_retriever = BM25Retriever.from_documents(chunks)
+        else:
+            print("PDF not found for BM25. Hybrid retrieval might be degraded.")
+            # Fallback: create an empty BM25 or mock it? 
+            # Ideally we should verify if we can skip it. The pipeline expects it.
+            # We can attempt to create a dummy if needed, but easier to just check file existence.
+            # Inside Docker, PDF should be mounted.
+            sparse_retriever = None 
 
-    pipeline = ApiRAGPipeline(
-        vectorstore=vectorstore, 
-        sparse_retriever=sparse_retriever, 
-        reranker_model=reranker_model, 
-        llm=llm, 
-        config=RAG_CONFIG
-    )
-    print("Pipeline initialized.")
+        pipeline = ApiRAGPipeline(
+            vectorstore=vectorstore, 
+            sparse_retriever=sparse_retriever, 
+            reranker_model=reranker_model, 
+            llm=llm, 
+            config=RAG_CONFIG
+        )
+        print("Pipeline initialized.")
 
     yield
     # Cleanup

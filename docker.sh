@@ -12,26 +12,26 @@ fi
 case "$1" in
   up)
     echo "Starting services..."
-    docker-compose up -d
+    docker compose up -d
     echo "Services started. Frontend at http://localhost:3000, Backend at http://localhost:8001"
     ;;
   down)
     echo "Stopping services..."
-    docker-compose down
+    docker compose down
     ;;
   build)
     echo "Building images..."
-    docker-compose build
+    docker compose build
     ;;
   ingest)
     echo "Running ingestion..."
     # Run the ingestion script inside the backend container context
     # Use --rm to remove the container after execution
-    docker-compose run --rm backend python ingest.py
+    docker compose run --rm backend python ingest.py
     ;;
   logs)
     echo "Showing logs..."
-    docker-compose logs -f
+    docker compose logs -f
     ;;
   *)
     echo "Invalid command: $1"
